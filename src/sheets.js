@@ -6,22 +6,23 @@ let sheetsClient = null;
 
 export function loadServiceAccount() {
   // 1. Inline key from env (GOOGLE_SERVICE_ACCOUNT_KEY) — raw JSON or base64 of it
-  const inline = config.google.serviceAccountKey.trim();
+  const inline = config.google.serviceAccountKey.trim().replace(/\s+/g, '');
   if (inline) {
     let raw = inline;
     if (!raw.startsWith('{')) {
-      try {
-        raw = Buffer.from(raw, 'base64').toString('utf8');
-      } catch {
-        throw new Error('GOOGLE_SERVICE_ACCOUNT_KEY is not valid base64');
-      }
+      raw = Buffer.from(raw, 'base64').toString('utf8');
     }
     try {
       return JSON.parse(raw);
     } catch {
+      const hint =
+        raw.startsWith('{')
+          ? 'it looks like raw JSON — make sure it was not truncated'
+          : `decoded ${raw.length} chars; if you copied it from a terminal, make sure the ` +
+            `shell prompt (e.g. "root@vps…") was not copied along with the base64 output`;
       throw new Error(
-        'GOOGLE_SERVICE_ACCOUNT_KEY must contain the service-account JSON ' +
-          '(or its base64 encoding). Tip: `base64 -w0 credentials/service-account.json`.',
+        `GOOGLE_SERVICE_ACCOUNT_KEY does not contain valid service-account JSON — ${hint}. ` +
+          `Regenerate with: base64 -w0 credentials/service-account.json`,
       );
     }
   }
