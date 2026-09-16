@@ -31,6 +31,9 @@ const channels = rawChannels.filter((c) => {
 export const config = {
   google: {
     sheetId: process.env.GOOGLE_SHEET_ID || '',
+    // service-account key: inline JSON (or base64 of it) — for Portainer/env-managed setups
+    serviceAccountKey: process.env.GOOGLE_SERVICE_ACCOUNT_KEY || '',
+    // ...or a path to the JSON file — for plain-VM / local setups
     serviceAccountFile: process.env.GOOGLE_SERVICE_ACCOUNT_FILE || './credentials/service-account.json',
     ordersTab: (process.env.ORDERS_TAB || '').trim(),
     settingsTab: (process.env.SETTINGS_TAB || 'Налаштування').trim(),

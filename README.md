@@ -109,7 +109,8 @@ pnpm start                # production: catch-up run + cron schedule
 | Variable | Description |
 |---|---|
 | `GOOGLE_SHEET_ID` | Spreadsheet ID from the URL |
-| `GOOGLE_SERVICE_ACCOUNT_FILE` | Path to the service-account JSON key |
+| `GOOGLE_SERVICE_ACCOUNT_KEY` | Inline key (JSON or base64) — takes priority over the file |
+| `GOOGLE_SERVICE_ACCOUNT_FILE` | Path to the service-account JSON key (default `./credentials/service-account.json`) |
 | `ORDERS_TAB` | Orders tab name; empty = first (leftmost) tab |
 | `SETTINGS_TAB` | Settings tab name (default `Налаштування`) |
 | `TELEGRAM_BOT_TOKEN` | From @BotFather |
@@ -171,23 +172,13 @@ journalctl -u order-notifier -f     # follow logs
 
 The GitHub Actions workflow (`.github/workflows/ci.yml`) builds the image on every push
 to `main` and publishes it to GHCR as
-`ghcr.io/<owner>/order-delivery-notifier:{latest,<sha>}`.
+`ghcr.io/alama1/order-delivery-notifier:{latest,<sha>}`.
 
-### 1. Prepare files on the VPS
+The container is fully stateless and **file-less**: all configuration comes from
+environment variables managed in Portainer, including the Google service-account key
+(`GOOGLE_SERVICE_ACCOUNT_KEY`) — no mounts, nothing to copy to the VPS.
 
-```bash
-mkdir -p /opt/order-notifier/credentials
-# upload the service-account JSON key:
-#   /opt/order-notifier/credentials/service-account.json
-# create and fill in the env file:
-#   /opt/order-notifier/.env            (see .env.example)
-# the container runs as non-root uid 1000 — make files readable:
-chown -R 1000:1000 /opt/order-notifier
-chmod 700 /opt/order-notifier && chmod 600 /opt/order-notifier/.env
-chmod 640 /opt/order-notifier/credentials/service-account.json
-```
-
-### 2. GHCR access (private package)
+### 1. GHCR access (private package)
 
 The image is private by default. Either pull it once with a token:
 
@@ -198,21 +189,40 @@ echo "<GHCR_PAT_with_read:packages>" | docker login ghcr.io -u <username> --pass
 …or make the package public: GitHub → your repo → **Packages** → the package →
 **Package settings → Change visibility → Public**.
 
-### 3. Deploy the stack in Portainer
+### 2. Encode the service-account key
 
-**Stacks → Add stack → Repository** (point it at this repo, file `docker-compose.yml`)
-or paste the file contents. Before deploying:
+On your machine (this project's folder):
 
-- replace `<owner>` in `image:` with your GitHub username (lowercase);
-- keep the `env_file` and `volumes` paths from step 1.
+```bash
+base64 -w0 credentials/service-account.json   # copy the output
+```
+
+### 3. Create the stack in Portainer
+
+**Stacks → Add stack → Repository** (this repo, `main`, `docker-compose.yml`) or paste
+the file. In the **Environment variables** section, define:
+
+| Variable | Required | Notes |
+|---|---|---|
+| `GOOGLE_SHEET_ID` | ✅ | spreadsheet ID from its URL |
+| `GOOGLE_SERVICE_ACCOUNT_KEY` | ✅ | the base64 output from step 2 |
+| `TELEGRAM_BOT_TOKEN` | ✅ | from @BotFather |
+| `DATABASE_URL` | ✅ | `postgres://user:pass@db.alamai.dev:5432/postgres` |
+| `TELEGRAM_CHAT_ID` | — | optional primary chat, auto-registered |
+| `DATABASE_SSL` | — | compose default is `disable` (your PG has no SSL) |
+| `CRON`, `TIMEZONE`, `NOTIFY_*`, `DB_NAME`, `ORDERS_TAB`, `SETTINGS_TAB`, `DRY_RUN` | — | sensible defaults, see compose file |
 
 Deploy, then watch logs in Portainer (**Containers → order-delivery-notifier → Logs**).
+The app creates the `order_delivery` database and schema on first boot.
 
 ### 4. Updating
 
 Push to `main` → Actions builds a new `latest` → in Portainer
 **Containers → re-pull and redeploy** (or `docker compose pull && docker compose up -d`
-on the host). The container keeps state in Postgres, so redeploys are safe.
+on the host). State lives in Postgres, so redeploys are safe.
+
+Plain-VM alternative: run from source with a `.env` file (`pnpm start`) or use the
+systemd unit below; the key is then read from `GOOGLE_SERVICE_ACCOUNT_FILE`.
 
 The container itself is stateless: `.env` and `credentials/` are mounted, dedup state
 lives in PostgreSQL.

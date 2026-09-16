@@ -4,19 +4,45 @@ import { config } from './config.js';
 
 let sheetsClient = null;
 
+export function loadServiceAccount() {
+  // 1. Inline key from env (GOOGLE_SERVICE_ACCOUNT_KEY) — raw JSON or base64 of it
+  const inline = config.google.serviceAccountKey.trim();
+  if (inline) {
+    let raw = inline;
+    if (!raw.startsWith('{')) {
+      try {
+        raw = Buffer.from(raw, 'base64').toString('utf8');
+      } catch {
+        throw new Error('GOOGLE_SERVICE_ACCOUNT_KEY is not valid base64');
+      }
+    }
+    try {
+      return JSON.parse(raw);
+    } catch {
+      throw new Error(
+        'GOOGLE_SERVICE_ACCOUNT_KEY must contain the service-account JSON ' +
+          '(or its base64 encoding). Tip: `base64 -w0 credentials/service-account.json`.',
+      );
+    }
+  }
+
+  // 2. Key file on disk (local dev / plain VM)
+  try {
+    return JSON.parse(readFileSync(config.google.serviceAccountFile, 'utf8'));
+  } catch (err) {
+    throw new Error(
+      `Cannot read service-account key file "${config.google.serviceAccountFile}": ${err.message} ` +
+        `(or set GOOGLE_SERVICE_ACCOUNT_KEY instead)`,
+    );
+  }
+}
+
 function client() {
   if (!sheetsClient) {
     // NOTE: constructed from the parsed key instead of { keyFile } —
     // keyFile mode fails with "invalid_grant: account not found" on
     // this google-auth-library version.
-    let key;
-    try {
-      key = JSON.parse(readFileSync(config.google.serviceAccountFile, 'utf8'));
-    } catch (err) {
-      throw new Error(
-        `Cannot read service-account key file "${config.google.serviceAccountFile}": ${err.message}`,
-      );
-    }
+    const key = loadServiceAccount();
     if (!key.client_email || !key.private_key) {
       throw new Error(
         'The service-account JSON must contain "client_email" and "private_key". ' +

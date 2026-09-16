@@ -1,20 +1,45 @@
 # Portainer stack for order-delivery-notifier.
 #
-# Prepare on the VPS before deploying:
-#   mkdir -p /opt/order-notifier/credentials
-#   # put the service-account JSON key into /opt/order-notifier/credentials/service-account.json
-#   # create /opt/order-notifier/.env (copy of .env.example, filled in)
-#   # make both readable by uid 1000 (container runs as the non-root 'node' user):
-#   #   chown -R 1000:1000 /opt/order-notifier && chmod 600 /opt/order-notifier/.env
+# Everything is configured through Portainer:
+#   Stacks → Add stack → paste this file (or use the repo) →
+#   in the "Environment variables" section define the variables listed below.
 #
-# Replace <OWNER> below with your GitHub username (lowercase).
+# Required variables (define in Portainer):
+#   GOOGLE_SHEET_ID             — spreadsheet ID from its URL
+#   GOOGLE_SERVICE_ACCOUNT_KEY  — service-account JSON key, base64-encoded
+#                                 (on your machine: base64 -w0 credentials/service-account.json)
+#   TELEGRAM_BOT_TOKEN          — token from @BotFather
+#   DATABASE_URL                — postgres://user:pass@host:5432/postgres
+#
+# Optional variables (defaults shown here):
+#   TELEGRAM_CHAT_ID, ORDERS_TAB, SETTINGS_TAB, DB_NAME, DATABASE_SSL,
+#   CRON, TIMEZONE, NOTIFY_TIME, NOTIFY_DAYS, NOTIFY_END_TIME,
+#   NOTIFY_WEEKENDS, NOTIFY_CHANNELS, DRY_RUN
 
 services:
   order-delivery-notifier:
-    image: ghcr.io/<owner>/order-delivery-notifier:latest
+    image: ghcr.io/alama1/order-delivery-notifier:latest
     container_name: order-delivery-notifier
     restart: unless-stopped
-    env_file:
-      - /opt/order-notifier/.env
-    volumes:
-      - /opt/order-notifier/credentials:/app/credentials:ro
+    environment:
+      # ── Google Sheets ──
+      GOOGLE_SHEET_ID: ${GOOGLE_SHEET_ID}
+      GOOGLE_SERVICE_ACCOUNT_KEY: ${GOOGLE_SERVICE_ACCOUNT_KEY}
+      ORDERS_TAB: ${ORDERS_TAB:-}
+      SETTINGS_TAB: ${SETTINGS_TAB:-Налаштування}
+      # ── Telegram ──
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      # ── PostgreSQL (dedup state) ──
+      DATABASE_URL: ${DATABASE_URL}
+      DB_NAME: ${DB_NAME:-order_delivery}
+      DATABASE_SSL: ${DATABASE_SSL:-disable}
+      # ── Scheduler & settings fallbacks ──
+      CRON: "${CRON:-*/10 * * * *}"
+      TIMEZONE: ${TIMEZONE:-Europe/Kyiv}
+      NOTIFY_TIME: ${NOTIFY_TIME:-09:00}
+      NOTIFY_DAYS: ${NOTIFY_DAYS:-3}
+      NOTIFY_END_TIME: ${NOTIFY_END_TIME:-}
+      NOTIFY_WEEKENDS: ${NOTIFY_WEEKENDS:-0}
+      NOTIFY_CHANNELS: ${NOTIFY_CHANNELS:-telegram}
+      DRY_RUN: ${DRY_RUN:-0}
