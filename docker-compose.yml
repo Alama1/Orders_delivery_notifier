@@ -1,0 +1,20 @@
+# Portainer stack for order-delivery-notifier.
+#
+# Prepare on the VPS before deploying:
+#   mkdir -p /opt/order-notifier/credentials
+#   # put the service-account JSON key into /opt/order-notifier/credentials/service-account.json
+#   # create /opt/order-notifier/.env (copy of .env.example, filled in)
+#   # make both readable by uid 1000 (container runs as the non-root 'node' user):
+#   #   chown -R 1000:1000 /opt/order-notifier && chmod 600 /opt/order-notifier/.env
+#
+# Replace <OWNER> below with your GitHub username (lowercase).
+
+services:
+  order-delivery-notifier:
+    image: ghcr.io/<owner>/order-delivery-notifier:latest
+    container_name: order-delivery-notifier
+    restart: unless-stopped
+    env_file:
+      - /opt/order-notifier/.env
+    volumes:
+      - /opt/order-notifier/credentials:/app/credentials:ro

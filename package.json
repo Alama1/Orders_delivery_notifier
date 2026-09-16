@@ -1,0 +1,22 @@
+{
+  "name": "order-delivery-notifier",
+  "version": "1.0.0",
+  "description": "Reads orders from Google Sheets and sends Telegram reminders N days before delivery",
+  "type": "module",
+  "private": true,
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "once": "node src/index.js --once",
+    "dry": "DRY_RUN=1 node src/index.js --once"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "googleapis": "^181.0.0",
+    "node-cron": "^4.6.0",
+    "pg": "^8.23.0"
+  }
+}
