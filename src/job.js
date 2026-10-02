@@ -6,6 +6,9 @@ import {
   selectCandidates,
   minutesOfDayInTz,
   isWeekendInTz,
+  weekdayInTz,
+  todayInTz,
+  WEEKDAY_NAMES_UK,
 } from './orders.js';
 import { buildReminderMessage } from './message.js';
 import * as db from './db.js';
@@ -22,6 +25,8 @@ function parseNotifyMinutes(time) {
   return h * 60 + m;
 }
 
+const formatDays = (days) => days.map((d) => WEEKDAY_NAMES_UK[d]).join(', ');
+
 /**
  * One pass: read settings + orders, notify about orders that are
  * within [0..X] days of delivery and haven't been notified yet.
@@ -31,14 +36,27 @@ export async function runJob() {
 
   // 1. Settings from the sheet (or .env fallback)
   const settings = await readSettings();
+  const daysDesc = settings.notifyDaysOfWeek
+    ? `days=[${formatDays(settings.notifyDaysOfWeek)}]`
+    : `weekends=${settings.weekendNotify ? 'on' : 'off'}`;
   log(
     `[job] settings (${settings.source}): time=${settings.time}` +
       `${settings.endTime ? `–${settings.endTime}` : ''}, days=${settings.days}, ` +
-      `weekends=${settings.weekendNotify ? 'on' : 'off'}`,
+      daysDesc,
   );
 
-  // 2. Weekend gate
-  if (!settings.weekendNotify && isWeekendInTz(config.timezone)) {
+  // 2. Day-of-week gate (checkboxes on the «Сповіщати у дні» row)
+  const weekday = weekdayInTz(config.timezone);
+  if (settings.notifyDaysOfWeek) {
+    if (!settings.notifyDaysOfWeek.includes(weekday)) {
+      log(
+        `[job] ${WEEKDAY_NAMES_UK[weekday]} is not a notification day ` +
+          `([${formatDays(settings.notifyDaysOfWeek)}]) — nothing to send today`,
+      );
+      return summary;
+    }
+  } else if (!settings.weekendNotify && isWeekendInTz(config.timezone)) {
+    // legacy mode: no day checkboxes → weekends are skipped
     log('[job] weekend — notifications paused until the next workday');
     return summary;
   }
@@ -59,7 +77,14 @@ export async function runJob() {
   const rows = await readOrdersRows();
   const orders = parseOrders(rows, { timezone: config.timezone });
   summary.orders = orders.length;
-  const candidates = selectCandidates(orders, settings.days);
+  const sendDate = todayInTz(config.timezone).toISOString().slice(0, 10);
+  const selected = selectCandidates(orders, settings.days);
+  // orders confirmed done via the bot stay silent
+  const doneKeys = new Set((await db.getDoneOrders()).map((o) => `${o.sheetRow}|${o.deliveryDate}`));
+  const candidates = selected.filter((o) => !doneKeys.has(`${o.sheetRow}|${o.deliveryDateIso}`));
+  if (selected.length !== candidates.length) {
+    log(`[job] ${selected.length - candidates.length} order(s) already marked done — skipping`);
+  }
   summary.candidates = candidates.length;
   log(`[job] parsed ${orders.length} valid orders, ${candidates.length} within ${settings.days}-day window`);
 
@@ -90,7 +115,8 @@ export async function runJob() {
       }
 
       for (const recipient of recipients) {
-        // Dedup is per recipient: every registered user gets their own notification.
+        // Dedup is per recipient AND per day: reminders repeat every allowed
+        // day until someone confirms the order via the bot.
         const reservationId = await db.reserveNotification({
           sheetRow: order.sheetRow,
           deliveryDate: order.deliveryDateIso,
@@ -98,6 +124,7 @@ export async function runJob() {
           daysLeft: order.daysLeft,
           channel,
           recipientId: recipient.id,
+          sendDate,
         });
 
         if (reservationId === null) {

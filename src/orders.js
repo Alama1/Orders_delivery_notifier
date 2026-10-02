@@ -77,6 +77,9 @@ export function weekdayInTz(timezone, date = new Date()) {
   return map[name];
 }
 
+/** Weekday names indexed by the 0–6 number used for day-of-week settings. */
+export const WEEKDAY_NAMES_UK = ['Неділя', 'Понеділок', 'Вівторок', 'Середа', 'Четвер', "П'ятниця", 'Субота'];
+
 export function isWeekendInTz(timezone, date = new Date()) {
   const day = weekdayInTz(timezone, date);
   return day === 0 || day === 6;

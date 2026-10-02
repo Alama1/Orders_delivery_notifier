@@ -1,6 +1,11 @@
 import { formatDate } from './orders.js';
 
-const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+/** Telegram-HTML escaping (also used by the bot for order labels). */
+export function escapeHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+const esc = escapeHtml;
 
 const line = (label, value) => (value ? `${label} ${esc(value)}` : null);
 
@@ -32,6 +37,8 @@ export function buildReminderMessage(order) {
     line('👤 Менеджер:', order.manager),
     line('📦 Статус:', order.status),
     line('💰 Залишок:', order.balance),
+    '',
+    '✅ Якщо замовлення вже віддано — відповідьте на це повідомлення «Готово» (або «+»), і нагадування по ньому зупиняться.',
   ];
   return parts.filter((p) => p !== null).join('\n');
 }

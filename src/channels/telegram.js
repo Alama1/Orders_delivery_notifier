@@ -19,14 +19,19 @@ async function callApi(method, body, timeoutMs = 15_000) {
 
 /**
  * Sends an HTML message to one chat.
+ * `opts.replyTo` — message id to thread the reply under (best-effort:
+ * sends as a normal message if the original is unavailable).
  * Returns the Telegram message_id on success, throws on failure.
  */
-export async function sendMessage(chatId, text) {
+export async function sendMessage(chatId, text, { replyTo } = {}) {
   const result = await callApi('sendMessage', {
     chat_id: chatId,
     text,
     parse_mode: 'HTML',
     disable_web_page_preview: true,
+    ...(replyTo
+      ? { reply_parameters: { message_id: replyTo, allow_sending_without_reply: true } }
+      : {}),
   });
   return result.message_id;
 }
@@ -47,6 +52,7 @@ export async function setMyCommands() {
       { command: 'start', description: 'Почати роботу з ботом' },
       { command: 'add', description: 'Додати цей чат до сповіщень' },
       { command: 'remove', description: 'Вимкнути сповіщення для цього чату' },
+      { command: 'undo', description: 'Поновити нагадування для замовлення' },
       { command: 'help', description: 'Довідка' },
     ],
   });

@@ -15,6 +15,15 @@ export function loadServiceAccount() {
     try {
       return JSON.parse(raw);
     } catch {
+      // paste artifacts: terminal copy often appends junk after the JSON —
+      // retry with everything outside the outermost {…} stripped
+      const start = raw.indexOf('{');
+      const end = raw.lastIndexOf('}');
+      if (start >= 0 && end > start) {
+        try {
+          return JSON.parse(raw.slice(start, end + 1));
+        } catch { /* fall through to the detailed error below */ }
+      }
       const hint =
         raw.startsWith('{')
           ? 'it looks like raw JSON — make sure it was not truncated'
@@ -101,12 +110,55 @@ const normTime = (value) => {
   return m ? `${m[1].padStart(2, '0')}:${m[2]}` : null;
 };
 
+const TRUE_VALUES = /^(true|так|да|yes|1|on)$/i;
+
+/**
+ * Ukrainian/English day name (full or short, e.g. «Понеділок», «Пн», «Mon»)
+ * → weekday number (0 = Sunday … 6 = Saturday), or null if not a day name.
+ */
+export function dayNameToWeekday(raw) {
+  const s = String(raw).toLowerCase().replace(/['’`ʼ]/g, '').trim();
+  if (!s) return null;
+  if (/^(пн|понед|mon)/.test(s)) return 1;
+  if (/^(вт|вівт|tue)/.test(s)) return 2;
+  if (/^(ср|сер|wed)/.test(s)) return 3;
+  if (/^(чт|чет|thu)/.test(s)) return 4;
+  if (/^(пт|пят|fri)/.test(s)) return 5;
+  if (/^(сб|суб|sat)/.test(s)) return 6;
+  if (/^(нд|нед|sun)/.test(s)) return 0;
+  return null;
+}
+
+/**
+ * Detects a day-of-week row: a label mentioning «дні/днів/day» plus two or
+ * more day-name cells to the right (e.g. «Сповіщати у дні | Понеділок | …»).
+ * Checkboxes (TRUE/FALSE) are read from the same columns of the next row.
+ * Returns { enabled: number[] } or null when the row is not a day row.
+ */
+function parseDayOfWeekRow(row, checkboxRow) {
+  const days = row.slice(1).map(dayNameToWeekday);
+  if (days.filter((d) => d !== null).length < 2) return null;
+
+  const enabled = new Set();
+  let sawAnyCheckbox = false;
+  for (let c = 1; c < row.length; c++) {
+    if (days[c - 1] === null) continue;
+    const check = String(checkboxRow?.[c] ?? '').trim();
+    if (check !== '') sawAnyCheckbox = true;
+    if (TRUE_VALUES.test(check)) enabled.add(days[c - 1]);
+  }
+  // header without any checkbox values → not configured yet, ignore the row
+  return sawAnyCheckbox ? { enabled: [...enabled].sort((a, b) => a - b) } : null;
+}
+
 /**
  * Pure settings parser (unit-testable). Supported rows (label in A, value in B):
  *   Час сповіщення      | 09:00   — window start
  *   Кінець сповіщень    | 18:00   — window end (optional; empty = no upper bound)
  *   Днів до здачі       | 3       — reminder window in days
- *   Сповіщати у вихідні | ні      — yes/так → notify on weekends too
+ *   Сповіщати у вихідні | ні      — yes/так → notify on weekends too (legacy)
+ *   Сповіщати у дні     | Понеділок | Вівторок | …      — day names
+ *                       | TRUE    | FALSE    | …      — checkboxes in the row below
  * Label matching is order-sensitive: «вихідн» and «кінець» must be checked
  * before the generic «сповіщ/час» start-time branch.
  */
@@ -116,16 +168,22 @@ export function parseSettingsRows(rows, fallback) {
     days: fallback.days,
     endTime: fallback.endTime || null,
     weekendNotify: fallback.weekendNotify,
+    notifyDaysOfWeek: fallback.notifyDaysOfWeek ?? null,
     source: 'env fallback',
   };
   let touched = false;
 
-  for (const row of rows) {
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i] || [];
     const label = String(row[0] || '').trim();
     const value = String(row[1] ?? '').trim();
     if (!label || !value || /пояс/i.test(label)) continue; // skip "Часовий пояс" etc.
 
-    if (/вихідн/i.test(label)) {
+    const dayRow = parseDayOfWeekRow(row, rows[i + 1]);
+    if (dayRow && /дн|день|day/i.test(label)) {
+      settings.notifyDaysOfWeek = dayRow.enabled;
+      touched = true;
+    } else if (/вихідн/i.test(label)) {
       settings.weekendNotify = /^(так|да|yes|true|1|on)$/i.test(value);
       touched = true;
     } else if (/кінець|закінч/i.test(label)) {
@@ -162,7 +220,9 @@ export function parseSettingsRows(rows, fallback) {
 
 /**
  * Reads the settings tab ("Налаштування") and returns
- * { time, endTime, days, weekendNotify, source }.
+ * { time, endTime, days, weekendNotify, notifyDaysOfWeek, source }.
+ * notifyDaysOfWeek is a sorted array of weekday numbers (0 = Sun … 6 = Sat)
+ * or null when the day-checkbox rows are absent → the weekend gate applies.
  * Falls back to .env defaults when the tab is missing or unreadable.
  */
 export async function readSettings() {
@@ -171,11 +231,13 @@ export async function readSettings() {
     days: config.fallback.notifyDays,
     endTime: config.fallback.endTime,
     weekendNotify: config.fallback.weekendNotify,
+    notifyDaysOfWeek: config.fallback.notifyDaysOfWeek,
   };
 
   let rows;
   try {
-    rows = await readRange(`${q(config.google.settingsTab)}!A1:B50`);
+    // columns A..H: the day row spans «Сповіщати у дні» + 7 day names
+    rows = await readRange(`${q(config.google.settingsTab)}!A1:H50`);
   } catch (err) {
     console.warn(
       `[sheets] settings tab "${config.google.settingsTab}" is unavailable (${err.message}) — using defaults`,

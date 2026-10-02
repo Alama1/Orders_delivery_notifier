@@ -8,6 +8,15 @@ const int = (v, dflt) => {
   return Number.isFinite(n) ? n : dflt;
 };
 
+// "1,3,5" (0 = Sunday … 6 = Saturday) → sorted unique array; empty/invalid → null
+const daysOfWeek = (v) => {
+  if (!v || !v.trim()) return null;
+  const set = new Set(
+    v.split(',').map((p) => Number.parseInt(p.trim(), 10)).filter((n) => Number.isInteger(n) && n >= 0 && n <= 6),
+  );
+  return set.size > 0 ? [...set].sort((a, b) => a - b) : null;
+};
+
 const KNOWN_CHANNELS = ['telegram'];
 const IMPLEMENTED_CHANNELS = ['telegram'];
 
@@ -54,6 +63,8 @@ export const config = {
     notifyDays: int(process.env.NOTIFY_DAYS, 3),
     endTime: (process.env.NOTIFY_END_TIME || '').trim(), // empty = no upper bound
     weekendNotify: bool(process.env.NOTIFY_WEEKENDS, false),
+    // e.g. "1,2,3,4,5"; null → NOTIFY_WEEKENDS decides (Mon–Fri vs all days)
+    notifyDaysOfWeek: daysOfWeek(process.env.NOTIFY_DAYS_OF_WEEK),
   },
   channels,
   dryRun: bool(process.env.DRY_RUN, false),

@@ -8,7 +8,10 @@
   "scripts": {
     "start": "node src/index.js",
     "once": "node src/index.js --once",
-    "dry": "DRY_RUN=1 node src/index.js --once"
+    "dry": "DRY_RUN=1 node src/index.js --once",
+    "mark-done": "node scripts/mark-orders-done.mjs",
+    "migrate-recipients": "node scripts/migrate-recipients.mjs",
+    "migrate-history": "node scripts/migrate-history.mjs"
   },
   "engines": {
     "node": ">=20"
